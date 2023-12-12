@@ -1,0 +1,288 @@
+---
+title: "Bike Share Analysis Report"
+author: "Santanu Jha"
+date: "12/10/2023"
+output: html_document
+---
+
+## Business Question Task & Background
+
+Launched in 2016, Cyclistic is a successful point-to-point bike-share program consisting of 5,824 geo-tracked bicycles and 692 locking stations across Chicago.
+
+Historically, Cyclistic's marketing strategy has focused on increasing public awareness and appealing to a broad market.
+
+Cyclistic's business objective is to understand the differences in how annual members and casual riders utilize their bikes. The goal is to analyze and identify distinct patterns and behaviors between these two user groups. This information can help optimize services, tailor marketing strategies, and enhance the overall user experience for each segment.
+
+## Data Source
+
+You will use Cyclistic's historical trip data to analyze and identify trends. [Download the Cyclistic trip data here](#).
+
+For the purposes of this case study, the datasets are appropriate and will enable you to answer the business questions. The data has been made available by Motivate International Inc. under this [license](#).
+
+## Data Cleaning and Manipulation
+
+The following steps were performed to prepare the data for analysis:
+
+-   Data loading and package installation
+
+-   Parsing date and time columns
+
+-   Creating additional columns for analysis (e.g., time of day, trip duration category)
+
+-   Handling missing values and filtering out invalid trip durations
+
+```{r setup, include=FALSE}
+# Set a CRAN mirror
+options(repos = c(CRAN = "https://cran.rstudio.com"))
+
+
+## Data Cleaning and Manipulation
+
+# Install and load necessary packages
+install.packages("tidyverse")
+install.packages("lubridate")
+
+# Load libraries
+library(tidyverse)
+library(lubridate)
+
+# Read data and load it into the dataframe my_df
+my_df <- read_csv("C:/Users/bhumi/Desktop/Capstone-Bike-Share/Combined Bike-Share-20222-12-to-2023-11.CSV")
+```
+
+Before Cleaning and Manipulation:
+
+```{r}
+summary(my_df)
+```
+
+```{r data_manipulation, echo=TRUE}
+
+my_df <- my_df %>%
+  mutate(
+    started_at = as.POSIXct(started_at, format = "%m/%d/%Y %H:%M"),
+    ended_at = as.POSIXct(ended_at, format = "%m/%d/%Y %H:%M"),
+    start_hour = hour(started_at),
+    time_of_day = case_when(
+      start_hour >= 5 & start_hour < 12 ~ "morning",
+      start_hour >= 12 & start_hour < 17 ~ "afternoon",
+      TRUE ~ "evening"
+    ),
+    start_time = format(started_at, "%H:%M:%S"),
+    end_time = format(ended_at, "%H:%M:%S"),
+    trip_duration = as.numeric(difftime(ended_at, started_at, units = "mins")),
+    month = format(started_at, "%B"),
+    weekday = format(started_at, "%A"),
+    route = paste(start_station_name, "to", end_station_name)
+  )
+
+my_df$trip_duration <- as.numeric(as.character(my_df$trip_duration))
+my_df <- my_df %>%
+  mutate(
+    trip_duration_category = cut(
+      trip_duration,
+      breaks = c(0, 15, 30, Inf),
+      labels = c("Short", "Medium", "Long"),
+      include.lowest = TRUE
+    )
+  )
+
+# Check for total number of missing/null values
+total_na_values <- sum(is.na(my_df))
+
+# Delete all null/missing and 0 values and store it in a new dataframe my_data
+my_data <- my_df %>%
+  drop_na() %>%
+  filter(!is.na(trip_duration) & trip_duration > 0)
+
+```
+
+After Cleaning and Manipulation:
+
+```{r}
+# Ready Data for Analysis
+summary(my_data)
+
+```
+
+## **Analysis**
+
+#### **Distribution of Member Types Based on Trip Duration**
+
+-   Utilized a polar bar chart to visualize the distribution of member types based on trip duration.
+
+-   Found that the majority of trips are taken by members, with a certain percentage of casual riders
+
+```{r}
+# Distribution of Member Types Based on Trip Duration
+my_data %>%
+  count(member_casual) %>%
+  mutate(Percentage = (n / sum(n)) * 100) %>%
+  ggplot(aes(x = "", y = n, fill = member_casual)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar("y", start = 0) +
+  theme_void() +
+  labs(title = "Distribution of Member Types Based on Trip Duration ",
+       fill = "Member Type",
+       x = NULL,
+       y = NULL) +
+  geom_text(aes(label = paste0(round(Percentage, 1), "%")),
+            position = position_stack(vjust = 0.5)) +
+  theme(legend.position = "bottom")
+```
+
+#### Trip duration Analysis Based On Member Type
+
+-   Compare the average trip duration between casual and member users to
+    understand any significant differences in how long each group typically
+    uses the bike-sharing service.
+
+```{r}
+trip_duration_summary <- my_data %>%
+  group_by(member_casual) %>%
+  summarize(
+    Average = mean(trip_duration),
+    Max = max(trip_duration),
+    Min = min(trip_duration),
+    Median = median(trip_duration),
+    .groups = "keep"
+  )
+
+print(trip_duration_summary)
+```
+
+#### ** Day of the Week Analysis**
+
+-   Analyzed average trip duration and total trips by day of the week and member type.
+
+-   Identified patterns in member and casual rider behavior throughout the week.
+
+```{r}
+# Day of the week analysis
+my_data %>%
+  mutate(day_of_week = weekdays(started_at)) %>%
+  group_by(member_casual, day_of_week) %>%
+  summarize(
+    Average_Duration = mean(trip_duration),
+    Total_Trips = n(),
+    .groups = "keep"
+  ) %>%
+  ggplot(aes(x = day_of_week, y = Average_Duration, fill = member_casual, label = Total_Trips)) +
+  geom_col(position = "dodge", show.legend = FALSE) +
+  geom_text(position = position_dodge(width = 0.9), vjust = -0.5, size = 3, aes(label = Total_Trips)) +
+  ggtitle("Average Trip Duration and Total Trips by Day of the Week and Member Type") +
+  xlab("Day of the Week") +
+  ylab("Average Trip Duration (minutes)") +
+  scale_fill_manual(values = c("casual" = "orange", "member" = "blue")) +  # Custom colors
+  theme_minimal()
+```
+
+#### **Time of Day Analysis**
+
+-   Explored average trip duration and total trips by time of day and member type.
+
+-   Noted variations in member and casual rider preferences during different times of the day.
+
+```{r}
+# Time of day analysis based on trip duration and member type
+my_data %>%
+  group_by(member_casual, time_of_day) %>%
+  summarize(
+    Average_Duration = mean(trip_duration),
+    Total_Trips = n(),
+    .groups = "keep"
+  ) %>%
+  ggplot(aes(x = time_of_day, y = Average_Duration, fill = member_casual, label = Total_Trips)) +
+  geom_col(position = "dodge", show.legend = FALSE) +
+  geom_text(position = position_dodge(width = 0.9), vjust = -0.5, size = 3, aes(label = Total_Trips)) +
+  ggtitle("Average Trip Duration and Total Trips by Time of Day and Member Type") +
+  xlab("Time of Day") +
+  ylab("Average Trip Duration (minutes)") +
+  scale_fill_manual(values = c("casual" = "orange", "member" = "blue")) +  # Custom colors
+  theme_minimal()
+```
+
+#### **Average Trip Duration by Trip Duration Category and Member Type**
+
+-   Examined the relationship between trip duration categories and member types.
+
+-   Identified trends in trip durations for both annual members and casual riders.
+
+```{r}
+# Average trip duration and total trips by trip duration and member type
+my_data %>%
+  group_by(member_casual, trip_duration_category) %>%
+  summarize(
+    Average_Duration = mean(trip_duration),
+    Total_Trips = n(),
+    .groups = "keep"
+  ) %>%
+  ggplot(aes(x = trip_duration_category, y = Average_Duration, fill = member_casual, label = Total_Trips)) +
+  geom_col(position = "dodge", show.legend = FALSE) +
+  geom_text(position = position_dodge(width = 0.9), vjust = -0.5, size = 3, aes(label = Total_Trips)) +
+  ggtitle("Average Trip Duration and Total Trips by Trip Duration Category and Member Type") +
+  xlab("Trip Duration Category") +
+  ylab("Average Trip Duration (minutes)") +
+  scale_fill_manual(values = c("casual" = "orange", "member" = "blue")) +  # Custom colors
+  theme_minimal()
+```
+
+#### **Member Usage of Different Rideable Types**
+
+-   Investigated how member types use different rideable types based on average trip duration.
+
+-   Found insights into rideable type preferences for both annual members and casual riders.
+
+```{r}
+# Member usage of different rideable types based on average trip duration
+my_data %>%
+  group_by(member_casual, rideable_type) %>%
+  summarize(
+    Average_Duration = mean(trip_duration),
+    Total_Trips = n(),
+    .groups = "keep"
+  ) %>%
+  ggplot(aes(x = rideable_type, y = Average_Duration, fill = member_casual, label = Total_Trips)) +
+  geom_col(position = "dodge", show.legend = FALSE) +
+  geom_text(position = position_dodge(width = 0.9), vjust = -0.5, size = 3, aes(label = Total_Trips)) +
+  ggtitle("Member usage of different rideable types") +
+  xlab("Rideable Type") +
+  ylab("Average Trip Duration (minutes)") +
+  scale_fill_manual(values = c("casual" = "orange", "member" = "blue")) +  # Custom colors
+  theme_minimal()
+```
+
+#### **Rideable Type Preferences by Member Type**
+
+-   Explored the total trips for each rideable type, distinguishing between annual members and casual riders.
+
+-   Provided insights into the preferred rideable types for each member type.
+
+```{r}
+# Rideable type preferences for annual members and casual riders
+my_data %>%
+  group_by(member_casual, rideable_type) %>%
+  summarise(Total_Trips = n(),
+            .groups = "keep") %>%
+  ggplot(aes(x = rideable_type, y = Total_Trips, fill = member_casual)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle("Rideable Type Preferences by Member Type") +
+  xlab("Rideable Type") +
+  ylab("Total Trips") +
+  scale_fill_manual(values = c("casual" = "orange", "member" = "blue")) +  # Custom colors
+  theme_minimal()
+```
+
+## Recommendations
+
+1.  **Promotional Strategies:** Develop targeted promotional strategies to encourage casual riders to become annual members, focusing on the benefits of membership.
+
+2.  **Service Optimization:** Optimize bike distribution based on peak usage times, days, and rideable type preferences to enhance the overall user experience.
+
+3.  **User Engagement:** Implement features or incentives to engage users during specific times of the day or days of the week, addressing the identified patterns.
+
+## Conclusion
+
+In summary, our analysis of Cyclistic's bike-share program highlights key differences between annual members and casual riders. Annual members contribute significantly to revenue, showcasing consistent and longer rides, especially on weekdays. Casual riders, in contrast, prefer shorter, sporadic trips.
+
+To drive growth, Cyclistic should focus on converting casual riders into annual members. Tailoring marketing efforts based on usage patterns and highlighting the benefits of annual memberships can enhance user engagement and contribute to sustained success in the bike-sharing market.
